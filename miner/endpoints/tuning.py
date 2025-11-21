@@ -148,7 +148,7 @@ async def get_latest_model_submission(task_id: str) -> MinerSubmission:
         config_filename = f"{task_id}.yml"
         config_path = os.path.join(cst.CONFIG_DIR, config_filename)
         repo_id = None
-        
+
         if os.path.exists(config_path):
             with open(config_path, "r") as file:
                 config_data = yaml.safe_load(file)
@@ -164,7 +164,7 @@ async def get_latest_model_submission(task_id: str) -> MinerSubmission:
             raise HTTPException(status_code=404, detail=f"No model submission found for task {task_id}")
 
         model_hash = calculate_model_hash(repo_id)
-        
+
         return MinerSubmission(repo=repo_id, model_hash=model_hash)
 
     except FileNotFoundError as e:
@@ -190,8 +190,11 @@ async def task_offer(
         current_time = datetime.now()
         if request.task_type not in [TaskType.INSTRUCTTEXTTASK, TaskType.DPOTASK, TaskType.GRPOTASK, TaskType.CHATTASK]:
             return MinerTaskResponse(
-                message=f"This endpoint only accepts text tasks: "
-                f"{TaskType.INSTRUCTTEXTTASK}, {TaskType.DPOTASK}, {TaskType.GRPOTASK} and {TaskType.CHATTASK}",
+                message=(
+                    "This endpoint only accepts text tasks: "
+                    f"{TaskType.INSTRUCTTEXTTASK}, {TaskType.DPOTASK}, "
+                    f"{TaskType.GRPOTASK} and {TaskType.CHATTASK}"
+                ),
                 accepted=False,
             )
 
@@ -256,8 +259,17 @@ async def task_offer_image(
 
 
 async def get_training_repo(task_type: TournamentType) -> TrainingRepoResponse:
+    """
+    Endpoint used by the tournament validator to discover which GitHub
+    repository + commit to use for this miner in tournaments.
+
+    Zwracamy Twój fork + branch "main", tak żeby:
+    - validator klonował: https://github.com/Ree928/god-text-winner-tourn-41875086c32e33e3-20250714
+    - checkout robił na "main" (działa tak samo jak commit hash, tylko wskazuje na HEAD brancha).
+    """
     return TrainingRepoResponse(
-        github_repo="https://github.com/rayonlabs/G.O.D", commit_hash="076e87fc746985e272015322cc91fb3bbbca2f26"
+        github_repo="https://github.com/Ree928/god-text-winner-tourn-41875086c32e33e3-20250714",
+        commit_hash="main",
     )
 
 
