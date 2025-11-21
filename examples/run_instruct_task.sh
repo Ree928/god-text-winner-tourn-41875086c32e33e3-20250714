@@ -76,7 +76,7 @@ class InstructTaskConfig:
         return asdict(self)
 
 
-# 🔥 Konkretny config „tryhard” dla 7B
+# 🔥 Konkretny config dla 7B
 
 REE_MISTRAL7B_INSTRUCT = InstructTaskConfig(
     task_id="ree-7b-instruct-tourn-001",
@@ -102,7 +102,7 @@ REE_MISTRAL7B_INSTRUCT = InstructTaskConfig(
     # Ile czasu walidator ma na trening
     hours_to_complete=16,
 
-    # 🔥 Tryhard hyperparamy
+    # 🔥 hyperparamy
     max_steps=3500,                   # więcej kroków niż 2500
     max_seq_length=2048,              # standard dla Mistrala
     per_device_train_batch_size=8,    # batch na jedną kartę
