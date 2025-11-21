@@ -1,71 +1,116 @@
-#!/bin/bash
+"""
+Config treningowy Ree – Mistral-7B-Instruct pod turniej.
 
-# Example configuration for InstructTextTask training
+To jest CZYSTY CONFIG (bez side-effectów).
+Nic się samo nie odpala, dopóki:
+- ktoś tego nie zaimportuje
+- i nie zbuduje z tego TrainerProxyRequest / TrainingData itd.
 
-# Unique task identifier
-TASK_ID="0ace46bc-8f88-4e70-95b9-9502b5a4d1dc"
+Zaleta: wszystkie ważne decyzje (model, dataset, hyperparamy)
+są w jednym miejscu, w czytelnej formie.
+"""
 
-# Model to fine-tune (from HuggingFace)
-MODEL="TinyLlama/TinyLlama_v1.1"
+from dataclasses import dataclass, asdict
+from typing import Dict, Any
 
-# Dataset location - can be:
-# - S3 URL: "s3://bucket/path/to/dataset.json"
-# - Local file: "/path/to/dataset.json"
-# - HuggingFace dataset: "username/dataset-name"
-DATASET="s3://your-bucket/path/to/instruct_dataset.json"
 
-# Dataset type mapping - maps your dataset columns to expected format
-# For InstructTextTask:
-# - field_instruction: column containing the instruction/question
-# - field_output: column containing the expected output/answer
-DATASET_TYPE='{
-  "field_instruction":"instruct",
-  "field_output":"output"
-}'
+@dataclass
+class InstructTaskConfig:
+    """
+    Ogólny config dla zadania typu InstructTextTask.
 
-# File format: "csv", "json", "hf" (HuggingFace), or "s3"
-FILE_FORMAT="s3"
+    Pola są dobrane tak, żeby:
+    - dało się z nich łatwo zbudować payload dla trenera / walidatora,
+    - były czytelne przy tuningu (zmieniasz liczby tutaj, a nie w 10 miejscach).
+    """
+    # Id taska – możesz zachować spójność z tym, co masz w bashu
+    task_id: str
 
-# Optional: Repository name for the trained model (just the model name, not username/model-name)
-EXPECTED_REPO_NAME="my-finetuned-model"
+    # Typ zadania – w Twoim repo to jest InstructTextTask
+    task_type: str
 
-# Create secure data directory
-DATA_DIR="$(pwd)/secure_data"
-mkdir -p "$DATA_DIR"
-chmod 700 "$DATA_DIR"
+    # Model bazowy
+    model_name_or_path: str
 
-# Build the downloader image
-docker build --no-cache -t trainer-downloader -f dockerfiles/trainer-downloader.dockerfile .
+    # Dataset (HuggingFace name, S3 path, itd.)
+    dataset_name: str
+    dataset_split: str
 
-# Build the trainer image
-docker build --no-cache -t standalone-text-trainer -f dockerfiles/standalone-text-trainer.dockerfile .
+    # Mapowanie pól datasetu na format oczekiwany przez InstructTextTask
+    dataset_mapping: Dict[str, str]
 
-# Download model and dataset
-echo "Downloading model and dataset..."
-docker run --rm \
-  --volume "$DATA_DIR:/cache:rw" \
-  --name downloader-example \
-  trainer-downloader \
-  --task-id "$TASK_ID" \
-  --model "$MODEL" \
-  --dataset "$DATASET" \
-  --task-type "InstructTextTask" \
-  --file-format "$FILE_FORMAT"
+    # Format:
+    # - "hf"   → HuggingFace dataset
+    # - "json" → lokalny json
+    # - "csv"  → lokalny csv
+    # - "s3"   → dane z S3
+    file_format: str
 
-# Run the training
-echo "Starting training..."
-docker run --rm --gpus all \
-  --security-opt=no-new-privileges \
-  --cap-drop=ALL \
-  --memory=64g \
-  --cpus=8 \
-  --volume "$DATA_DIR:/cache:rw" \
-  --name instruct-text-trainer-example \
-  standalone-text-trainer \
-  --task-id "$TASK_ID" \
-  --model "$MODEL" \
-  --dataset "$DATASET" \
-  --dataset-type "$DATASET_TYPE" \
-  --task-type "InstructTextTask" \
-  --file-format "$FILE_FORMAT" \
-  --expected-repo-name "$EXPECTED_REPO_NAME"
+    # Ile godzin walidator ma na skończenie taska
+    hours_to_complete: int
+
+    # Hyperparamy treningu
+    max_steps: int
+    max_seq_length: int
+    per_device_train_batch_size: int
+    gradient_accumulation_steps: int
+    learning_rate: float
+    warmup_ratio: float
+    weight_decay: float
+    lr_scheduler_type: str
+    bf16: bool
+    gradient_checkpointing: bool
+
+    def to_training_payload(self) -> Dict[str, Any]:
+        """
+        Zwraca słownik, który można wrzucić w:
+        - TrainingData / TrainerProxyRequest
+        albo
+        - bezpośrednio do jakiegoś launchera trenera.
+
+        Przykład użycia (pseudo):
+
+        payload = REE_MISTRAL7B_INSTRUCT.to_training_payload()
+        TrainerProxyRequest(training_data=payload, hotkey=...)
+        """
+        return asdict(self)
+
+
+# 🔥 Konkretny config „tryhard” dla 7B
+
+REE_MISTRAL7B_INSTRUCT = InstructTaskConfig(
+    task_id="ree-7b-instruct-tourn-001",
+    task_type="InstructTextTask",
+
+    # 7B model bazowy
+    model_name_or_path="mistralai/Mistral-7B-Instruct-v0.2",
+
+    # Instruct dataset – klasyczny Alpaca
+    dataset_name="tatsu-lab/alpaca",
+    dataset_split="train",
+
+    # Mapowanie pól:
+    # - instruction → prompt
+    # - output      → target
+    dataset_mapping={
+        "field_instruction": "instruction",
+        "field_output": "output",
+    },
+
+    file_format="hf",
+
+    # Ile czasu walidator ma na trening
+    hours_to_complete=16,
+
+    # 🔥 Tryhard hyperparamy
+    max_steps=3500,                   # więcej kroków niż 2500
+    max_seq_length=2048,              # standard dla Mistrala
+    per_device_train_batch_size=8,    # batch na jedną kartę
+    gradient_accumulation_steps=16,   # efektywny batch 8*16 = 128
+    learning_rate=2e-5,               # agresywniejszy LR
+    warmup_ratio=0.03,
+    weight_decay=0.1,
+    lr_scheduler_type="cosine",
+    bf16=True,
+    gradient_checkpointing=True,
+)
